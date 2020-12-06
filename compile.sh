@@ -4,5 +4,5 @@ do
 	FILENAME=$(basename $i .cpp)
 	echo $FILENAME
 	rm ./out/$FILENAME.o
-	g++ -o ./out/$FILENAME.o test/$FILENAME.cpp src/*.cpp -lpcap -Wall -O2 
+	g++ -o ./out/$FILENAME.o test/$FILENAME.cpp src/*.cpp -lpcap -pthread -Wall -O2 
 done

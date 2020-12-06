@@ -13,10 +13,11 @@
 namespace tinytcp {
 namespace eth {
 
-typedef uint8_t addr_t[6];
+typedef uint8_t addr_t[6]; // big endian
 
 const int MINFRAMELEN = 46;
 const int MAXFRAMELEN = 1500;
+const addr_t BROADCAST = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 /** 
  * @brief Encapsulate some data into an Ethernet II frame and send it.
@@ -55,7 +56,7 @@ typedef int (*frameReceiveCallback)(const void*, int, int);
 int setFrameReceiveCallback(frameReceiveCallback callback);
 
 /**
- * @brief Get the MAC address of a specified address
+ * @brief Get the MAC address of a specified device
  *
  * @param device Name of the device.
  * @param mac Pointer to the place to store the MAC address
@@ -72,6 +73,26 @@ int getMACAddr(const char *device, eth::addr_t *mac);
  * @see addDevice
  */
 int startCapture(int id);
+
+/** 
+ * @brief Determine whether an ethernet address is broadcast
+ *
+ * @param mac the MAC address to be determined
+ * @return true or false.
+ */
+bool isBroadcast(eth::addr_t mac);
+
+/** 
+ * @brief Determine whether two ethernet addresses are the same
+ *
+ * @param mac1 the first MAC address to be determined
+ * @param mac2 the second MAC address to be determined
+ * @return true or false.
+ */
+bool equalAddr(const eth::addr_t &mac1, const eth::addr_t &mac2);
+
+void mutexinit();
+void mutexcleanup();
 
 };
 };

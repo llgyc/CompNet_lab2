@@ -7,11 +7,11 @@
 #ifndef __TINYTCP_DEVICE_H__
 #define __TINYTCP_DEVICE_H__
 
-#include <vector>
 #include <string>
 #include <pcap.h>
 
 #include "packetio.h"
+#include "ip.h"
 
 namespace tinytcp {
 namespace device {
@@ -22,8 +22,9 @@ const int READ_TIMEOUT = 1000;
 struct Device {
     std::string name;
     eth::addr_t mac;
+    ip::addr_t ip;
     pcap_t *handle;
-    
+
     Device();
     ~Device();
 };
@@ -53,6 +54,8 @@ int findDevice(const char* device);
  * @see addDevice
  */
 const Device *getDevice(int id);
+
+int getIdFromFd(int fd);
 
 }
 }

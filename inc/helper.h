@@ -7,6 +7,9 @@
 #ifndef __TINYTCP_HELPER_H__
 #define __TINYTCP_HELPER_H__
 
+#include "ip.h"
+#include "packetio.h"
+
 namespace tinytcp {
 namespace helper {
     
@@ -18,6 +21,16 @@ namespace helper {
  */
 uint16_t endian_reverse(uint16_t num);
 uint32_t endian_reverse(uint32_t num);
+
+/**
+ * @brief Get current time. 
+ *
+ * @return time in seconds
+ */
+time_t getTime();
+
+void printIP(ip::addr_t ip);
+void printMAC(eth::addr_t mac);
 
 }
 }

@@ -1,17 +1,25 @@
+#include <map>
+#include <vector>
+
 #include "../inc/device.h"
+#include "../inc/helper.h"
+
+#define DEBUG
 
 namespace tinytcp {
 namespace device {
 
 static std::vector<Device> all_devices;
+static std::map<int, int> fd2id;
 
 Device::Device() {
     handle = NULL;
 }
 
 Device::~Device() {
-    if (handle) 
-        pcap_close(handle);
+    /* Due to implementation problem, we disable 
+     * destruct function to protect from double-free problem
+     */    
 }
 
 int addDevice(const char* device) {
@@ -25,9 +33,21 @@ int addDevice(const char* device) {
     if (pcap_datalink(handle) != DLT_EN10MB) {
         fprintf(stderr, "ERROR: pcap_open_live() failed"
             " - device %s doesn't support Ethernet\n", device);
+        pcap_close(handle);
         return -1;
     }
-    
+    if (pcap_setnonblock(handle, 1, errbuf) != 0) {
+        fprintf(stderr, "ERROR: pcap_setnonblock() failed"
+            " - %s\n", errbuf);
+        pcap_close(handle);
+        return -1;
+    }
+    int fd = pcap_get_selectable_fd(handle);
+    if (fd < 0) {
+        fprintf(stderr, "ERROR: pcap_get_selectable_fd() failed\n");
+        pcap_close(handle);
+        return -1;
+    }
     all_devices.emplace_back();
     int id = all_devices.size() - 1;
     all_devices[id].name = device;
@@ -36,7 +56,26 @@ int addDevice(const char* device) {
             " - unable to get MAC address of %s\n", device);
         return -1;
     }
+    if (ip::getIPAddr(device, &all_devices[id].ip) < 0) {
+        fprintf(stderr, "ERROR: pcap_open_live() failed"
+            " - unable to get IP address of %s\n", device);
+        return -1;
+    }
     all_devices[id].handle = handle;
+    fd2id[fd] = id;
+    ip::register_epoll(fd);
+    
+    #ifdef DEBUG
+    fprintf(stderr, "=========================================\n");
+    fprintf(stderr, "Added device: %s  ID: %d\n", device, id);
+    fprintf(stderr, "MAC address: ");
+    helper::printMAC(all_devices[id].mac);
+    fprintf(stderr, "\nIP address: ");
+    helper::printIP(all_devices[id].ip);
+    fprintf(stderr, "\nfd: %d\n", fd);
+    fprintf(stderr, "=========================================\n");
+    #endif
+    
     return id;
 }
 
@@ -48,9 +87,15 @@ int findDevice(const char* device) {
 }
 
 const Device *getDevice(int id) {
-    if (id < 0 || (size_t)id > all_devices.size()) 
+    if (id < 0 || (size_t)id >= all_devices.size()) 
         return NULL;
     return &all_devices[id];
+}
+
+int getIdFromFd(int fd) {
+    if (fd2id.find(fd) != fd2id.end())
+        return fd2id[fd];
+    return -1;
 }
 
 }

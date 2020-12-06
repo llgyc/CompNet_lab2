@@ -12,12 +12,20 @@
 #include "../inc/device.h"
 #include "../inc/helper.h"
 
+//#define DEBUG
+
 namespace tinytcp {
 namespace eth {
 
+pthread_mutex_t sendpacket_mutex;
+
 int sendFrame(const void* buf, int len, 
     int ethtype, const void* destmac, int id) {
-
+    
+    #ifdef DEBUG
+    fprintf(stderr, "sendFrame id: %d\n", id);
+    #endif
+    
     /* Padding & FCS are done by devices, so no need to check MINFRAMELEN here. */
     if (len > MAXFRAMELEN) {
         fprintf(stderr, "ERROR: sendFrame() failed - ethernet frame length is invalid\n");
@@ -37,13 +45,14 @@ int sendFrame(const void* buf, int len,
     r_ethtype = helper::endian_reverse(r_ethtype);
     std::memcpy(frame + 12, &r_ethtype, 2);
     std::memcpy(frame + 14, buf, len);
-    
+    pthread_mutex_lock(&sendpacket_mutex);
     if (pcap_sendpacket(dev->handle, frame, 14 + len) == -1) {
+        pthread_mutex_unlock(&sendpacket_mutex);
         fprintf(stderr, "ERROR: sendFrame() failed - %s\n", pcap_geterr(dev->handle));
         delete [] frame;
         return -1;
     }
-    
+    pthread_mutex_unlock(&sendpacket_mutex);
     delete [] frame; 
     return 0;
 }
@@ -103,10 +112,8 @@ int startCapture(int id) {
     int res;
     struct pcap_pkthdr *header;
     const u_char *pkt_data;
-    while((res = pcap_next_ex(dev->handle, &header, &pkt_data)) >= 0){
-        if(res == 0)
-            /* Timeout elapsed */
-            continue;
+    while((res = pcap_next_ex(dev->handle, &header, &pkt_data)) > 0){
+	/* Nonblock mode - no need to check situations when (res == 0) */
         
         if (!callback) {
             fprintf(stderr, "ERROR: startCapture() failed - callback function not registered\n");
@@ -127,6 +134,25 @@ int startCapture(int id) {
     return 0;
 }
 
+bool isBroadcast(eth::addr_t mac) {
+    for (int i = 0; i < 6; i++) 
+        if (mac[i] != (uint8_t)0xff) return false;
+    return true;
+}
+
+bool equalAddr(const eth::addr_t &mac1, const eth::addr_t &mac2) {
+    for (int i = 0; i < 6; i++)
+        if (mac1[i] != mac2[i]) return false;
+    return true;
+}
+
+void mutexinit() {
+    pthread_mutex_init(&sendpacket_mutex, NULL);
+}
+
+void mutexcleanup() {
+    pthread_mutex_destroy(&sendpacket_mutex);
+}
 
 }
 }
