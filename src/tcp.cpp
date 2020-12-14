@@ -1350,7 +1350,7 @@ int TCB::send(void *buf, size_t nbyte) {
     int ret = 0;
     while (nbyte > 0) {
         size_t len = std::min(nbyte, MAXSEGMENTSIZE);
-        Segment *seg = newSegment(rsockpair, ACK, sq->SND_NXT, rb->RCV_NXT, (char *)buf, nbyte);
+        Segment *seg = newSegment(rsockpair, ACK, sq->SND_NXT, rb->RCV_NXT, (char *)buf, len);
         sq->SND_NXT = sq->SND_NXT + (uint32_t)len;
         sq->addQueueAndSend(seg);
         buf = (void *)((char *)buf + len);
