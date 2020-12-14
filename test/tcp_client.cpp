@@ -13,9 +13,9 @@ int main(int argc, char **argv) {
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_NUMERICSERV;
     hints.ai_flags |= AI_ADDRCONFIG;
-    getaddrinfo("10.100.1.2", "8080", &hints, &listp);
+    getaddrinfo("10.100.2.2", "8080", &hints, &listp);
     for (p = listp; p; p = p->ai_next) {
-        if ((clientfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0)
+        if ((clientfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
             continue;
         if (connect(clientfd, p->ai_addr, p->ai_addrlen) != -1)
             break;
@@ -39,8 +39,8 @@ int main(int argc, char **argv) {
     } puts("");
     printf("[INFO] Successfully received %d bytes\n", num2);
     close(clientfd);
-    printf("[INFO] Closing ... \n");
-    sleep(2);
+    printf("[INFO] Closing ... Press Ctrl + C to shutdown\n");
+    while (1);
 
     return 0;
 }
