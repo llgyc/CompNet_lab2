@@ -6,8 +6,6 @@
 #include "../inc/device.h"
 #include "../inc/helper.h"
 
-#define DEBUG
-
 namespace tinytcp {
 namespace route {
 

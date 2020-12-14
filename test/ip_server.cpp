@@ -8,17 +8,17 @@
 
 using namespace tinytcp;
 
-int contentCallback(const void* buf, int len) {
+void contentCallback(ip::addr_t ip1, ip::addr_t ip2, const void* buf, int len) {
     ip::header *hd = (ip::header *) buf;
-    if (ip::isBroadcast(hd -> dstAddr)) return 0;
+    if (ip::isBroadcast(hd -> dstAddr)) return;
     struct in_addr src, dest;
     memcpy(&src, &hd -> dstAddr, sizeof(ip::addr_t));
     memcpy(&dest, &hd -> srcAddr, sizeof(ip::addr_t));
     //int proto = 0xfd; // 253 experiment protocol
-	int proto = hd -> protocol;
+    int proto = hd -> protocol;
     uint8_t hdlen = (hd -> ver_IHL & 0xf) << 2;
     ip::sendIPPacket(src, dest, proto, (char *)buf + hdlen, helper::endian_reverse(hd -> totLen) - hdlen);
-    return 0;
+    return;
 }
 
 int main(int argc, char **argv) {

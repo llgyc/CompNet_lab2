@@ -10,9 +10,8 @@
 
 #include "../inc/packetio.h"
 #include "../inc/device.h"
+#include "../inc/socket.h"
 #include "../inc/helper.h"
-
-//#define DEBUG
 
 namespace tinytcp {
 namespace eth {
@@ -66,7 +65,7 @@ int setFrameReceiveCallback(frameReceiveCallback callback) {
 
 /* Reference: https://www.cnblogs.com/dapaitou2006/p/6502195.html */
 int getMACAddr(const char *device, eth::addr_t *mac) {
-    int fd = socket(AF_PACKET, SOCK_DGRAM, 0);
+    int fd = __real_socket(AF_PACKET, SOCK_DGRAM, 0);
     struct ifreq ifr;
     size_t if_name_len = strlen(device);
     
@@ -80,24 +79,24 @@ int getMACAddr(const char *device, eth::addr_t *mac) {
         ifr.ifr_name[if_name_len] = '\0';
     } else {
         fprintf(stderr, "ERROR: getMACAddr() - interface name is too long\n");
-        close(fd);
+        __real_close(fd);
         return -1;
     }
     
     if (ioctl(fd, SIOCGIFHWADDR, &ifr) == -1) {
         fprintf(stderr, "ERROR: getMACAddr() - %s\n", strerror(errno));
-        close(fd);
+        __real_close(fd);
         return -1;
     }
         
     if(ifr.ifr_hwaddr.sa_family != ARPHRD_ETHER) {
         fprintf(stderr, "ERROR: getMACAddr() - device is not an Ethernet interface\n");
-        close(fd);
+        __real_close(fd);
         return -1;
     }
     
     memcpy(mac, ifr.ifr_hwaddr.sa_data, sizeof(eth::addr_t));
-    close(fd);
+    __real_close(fd);
     return 0;
 }
 

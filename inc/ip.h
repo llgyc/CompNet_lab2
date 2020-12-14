@@ -127,10 +127,13 @@ int setup();
  */
 int cleanup();
 
-int setIPContentCallback(IPPacketReceiveCallback callback);
+typedef void (*IPContentCallback) (ip::addr_t, ip::addr_t, const void *, int);
+int setIPContentCallback(IPContentCallback callback);
 
 int epollInit();
 int register_epoll(int fd);
+
+ip::addr_t getDefaultIP();
 
 }
 }

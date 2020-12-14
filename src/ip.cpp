@@ -14,7 +14,9 @@
 #include <netinet/in.h>
 
 #include "../inc/ip.h"
+#include "../inc/tcp.h"
 #include "../inc/route.h"
+#include "../inc/socket.h"
 #include "../inc/device.h"
 #include "../inc/helper.h"
 
@@ -34,7 +36,7 @@ bool isMyIP(ip::addr_t ip) {
 
 /* Reference: https://www.cnblogs.com/dapaitou2006/p/6502195.html */
 int getIPAddr(const char *device, ip::addr_t *ip) {
-    int fd = socket(AF_PACKET, SOCK_DGRAM, 0);
+    int fd = __real_socket(AF_PACKET, SOCK_DGRAM, 0);
     struct ifreq ifr;
     size_t if_name_len = strlen(device);
     
@@ -48,13 +50,13 @@ int getIPAddr(const char *device, ip::addr_t *ip) {
         ifr.ifr_name[if_name_len] = '\0';
     } else {
         fprintf(stderr, "ERROR: getIPAddr() - interface name is too long\n");
-        close(fd);
+        __real_close(fd);
         return -1;
     }
     
     if (ioctl(fd, SIOCGIFADDR, &ifr) == -1) {
         fprintf(stderr, "ERROR: getIPAddr() - %s\n", strerror(errno));
-        close(fd);
+        __real_close(fd);
         return -1;
     }
     
@@ -63,24 +65,8 @@ int getIPAddr(const char *device, ip::addr_t *ip) {
     memcpy(ip, &ipaddr->sin_addr, sizeof(ip::addr_t));
     all_ips.insert(*ip);
     
-    close(fd);
+    __real_close(fd);
     return 0;
-}
-
-uint16_t calcChecksum(uint8_t *buf, int len) {
-    uint32_t sum = 0;
-    if (len & 1) {
-        sum = buf[len-1] << 8;
-        len--;
-    }
-    len /= 2;
-    uint16_t *buf2 = (uint16_t *)buf;
-    for (int i = 0; i < len ; i++) {
-        sum += helper::endian_reverse(buf2[i]);
-        sum = (sum & 0xffffu) + (sum >> 16);
-    }
-    uint16_t ret = sum; ret = ~ret;
-    return helper::endian_reverse(ret);
 }
     
 int sendIPPacket(const struct in_addr src, const struct in_addr dest, 
@@ -91,8 +77,10 @@ int sendIPPacket(const struct in_addr src, const struct in_addr dest,
     hd -> TOS = 0;
     uint16_t totLen = sizeof(ip::header) + len;
     hd -> totLen = helper::endian_reverse(totLen);
+    pthread_mutex_lock(&ident_mutex);
     hd -> ident = ident;
     ident++;
+    pthread_mutex_unlock(&ident_mutex);
     hd -> frag = 0x0040u;
     hd -> TTL = 32;
     hd -> protocol = proto;
@@ -100,7 +88,7 @@ int sendIPPacket(const struct in_addr src, const struct in_addr dest,
     hd -> srcAddr = src.s_addr;
     hd -> dstAddr = dest.s_addr;
     memcpy(packet + sizeof(ip::header), buf, len);
-    hd -> checksum = calcChecksum(packet, sizeof(ip::header));
+    hd -> checksum = helper::calcChecksum(packet, sizeof(ip::header));
     route::packetIdent ide;
     ide.srcAddr = hd -> srcAddr;
     ide.ident = hd -> ident;
@@ -134,19 +122,18 @@ void decreaseTTL(const void *packet) {
     ip::header *hd = (ip::header *)packet;
     hd -> TTL--;
     hd -> checksum = 0;
-    hd -> checksum = calcChecksum((uint8_t *)packet, sizeof(ip::header));
+    hd -> checksum = helper::calcChecksum((uint8_t *)packet, sizeof(ip::header));
 }
 
-int defaultIPContentCallback(const void* buf, int len) {
+void defaultIPContentCallback(ip::addr_t ip1, ip::addr_t ip2, const void* buf, int len) {
     const uint8_t *ptr = (const uint8_t *)buf;
     fprintf(stderr, "===== Received packet =====\n");
     for (int i = 0; i < len; i++)
         fprintf(stderr, "%02x%c", ptr[i], " \n"[i % 8 == 7]);
     fprintf(stderr, "\n===========================\n");
-    return 0;
 }
 
-static IPPacketReceiveCallback content_callback = defaultIPContentCallback;
+static IPContentCallback content_callback = defaultIPContentCallback;
 
 int defaultIPCallback(const void* buf, int len) {
     ip::header *hd = (ip::header *)buf;
@@ -193,8 +180,13 @@ int defaultIPCallback(const void* buf, int len) {
     }
     
     /* Handling incoming packets */
-    if (isMyIP(hd->dstAddr) || ip::isBroadcast(hd -> dstAddr)) {    
-        content_callback(buf, len);
+    if (isMyIP(hd->dstAddr) || ip::isBroadcast(hd -> dstAddr)) {
+        if (hd->protocol == tcp::PTCL)
+            content_callback(hd->srcAddr, hd->dstAddr, 
+                (char *)buf + sizeof(ip::header), 
+                helper::endian_reverse(hd->totLen) - sizeof(ip::header));
+        else
+            return 0;
     }
     
     return ret;
@@ -236,7 +228,7 @@ int setIPPacketReceiveCallback(IPPacketReceiveCallback callback) {
     return 0;
 }
 
-int setIPContentCallback(IPPacketReceiveCallback callback) {
+int setIPContentCallback(IPContentCallback callback) {
     content_callback = callback;
     return 0;
 }
@@ -257,19 +249,6 @@ bool isBroadcast(ip::addr_t ip) {
     return (ip == ip::BROADCAST);
 }
 
-/* Reference: https://stackoverflow.com/questions/7961029/how-can-i-kill-a-pthread-that-is-in-an-infinite-loop-from-outside-that-loop */
-int needQuit(pthread_mutex_t *mtx)
-{
-    switch(pthread_mutex_trylock(mtx)) {
-        case 0: /* if we got the lock, unlock and return 1 (true) */
-            pthread_mutex_unlock(mtx);
-            return 1;
-        case EBUSY: /* return 0 (false) if the mutex was locked */
-            return 0;
-    }
-    return 1;
-}
-
 static pthread_t reader;
 static pthread_t alarm;
 static pthread_mutex_t reader_thread_mutex;
@@ -281,7 +260,7 @@ struct epoll_event events[MAXEVENTS];
 
 void *reader_thread(void *arg) {
     pthread_mutex_t *mtx = (pthread_mutex_t *)arg;
-    while (!needQuit(mtx)) {
+    while (!helper::needQuit(mtx)) {
         int nfds = epoll_wait(epfd, events, MAXEVENTS, 1);
         if (nfds < 0) {
             fprintf(stderr, "ERROR: reader_thread() failed\n");
@@ -301,7 +280,7 @@ void *reader_thread(void *arg) {
 
 void *alarm_thread(void *arg) {
     pthread_mutex_t *mtx = (pthread_mutex_t *)arg;
-    while (!needQuit(mtx)) {
+    while (!helper::needQuit(mtx)) {
         for (auto ip: all_ips) {
             struct in_addr src, dest;
             memcpy(&src, &ip, sizeof(ip::addr_t));
@@ -312,7 +291,7 @@ void *alarm_thread(void *arg) {
         }
         route::packetForget();
         route::tableForget();
-        fprintf(stderr, "Ring!\n");
+        //fprintf(stderr, "Ring!\n");
         sleep(10);
     }
     return NULL;
@@ -352,12 +331,13 @@ int cleanup() {
 
     pthread_mutex_unlock(&reader_thread_mutex);
     pthread_mutex_unlock(&alarm_thread_mutex);
-    pthread_mutex_destroy(&reader_thread_mutex);
-    pthread_mutex_destroy(&alarm_thread_mutex);
-    pthread_mutex_destroy(&ident_mutex);
     
     pthread_join(reader, NULL);
     pthread_join(alarm, NULL);
+    
+    pthread_mutex_destroy(&reader_thread_mutex);
+    pthread_mutex_destroy(&alarm_thread_mutex);
+    pthread_mutex_destroy(&ident_mutex);
     
     return 0;
 }
@@ -371,6 +351,10 @@ int register_epoll(int fd) {
         return -1;
     }
     return 0;
+}
+
+ip::addr_t getDefaultIP() {
+    return *all_ips.begin();
 }
 
 }

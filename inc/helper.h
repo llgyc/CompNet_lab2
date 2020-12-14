@@ -8,7 +8,9 @@
 #define __TINYTCP_HELPER_H__
 
 #include "ip.h"
+#include "device.h"
 #include "packetio.h"
+#include "tcp.h"
 
 namespace tinytcp {
 namespace helper {
@@ -31,6 +33,14 @@ time_t getTime();
 
 void printIP(ip::addr_t ip);
 void printMAC(eth::addr_t mac);
+void printPort(tcp::PortType port);
+
+int allocate_new_fd();
+uint16_t calcChecksum(uint8_t *buf, int len);
+int needQuit(pthread_mutex_t *mtx);
+uint32_t rand32bit();
+
+int initAll(int, char **);
 
 }
 }
